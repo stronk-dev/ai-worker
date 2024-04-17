@@ -209,6 +209,54 @@ func (w *Worker) TextToVideo(ctx context.Context, req TextToVideoJSONRequestBody
 	return resp.JSON200, nil
 }
 
+func (w *Worker) VideoToVideo(ctx context.Context, req VideoToVideoMultipartRequestBody) (*VideoResponse, error) {
+	c, err := w.borrowContainer(ctx, "video-to-video", *req.ModelId)
+	if err != nil {
+		return nil, err
+	}
+	defer w.returnContainer(c)
+
+	var buf bytes.Buffer
+	mw, err := NewVideoToVideoMultipartWriter(&buf, req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.Client.VideoToVideoWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON422 != nil {
+		val, err := json.Marshal(resp.JSON422)
+		if err != nil {
+			return nil, err
+		}
+		slog.Error("video-to-video container returned 422", slog.String("err", string(val)))
+		return nil, errors.New("video-to-video container returned 422")
+	}
+
+	if resp.JSON400 != nil {
+		val, err := json.Marshal(resp.JSON400)
+		if err != nil {
+			return nil, err
+		}
+		slog.Error("video-to-video container returned 400", slog.String("err", string(val)))
+		return nil, errors.New("video-to-video container returned 400")
+	}
+
+	if resp.JSON500 != nil {
+		val, err := json.Marshal(resp.JSON500)
+		if err != nil {
+			return nil, err
+		}
+		slog.Error("video-to-video container returned 500", slog.String("err", string(val)))
+		return nil, errors.New("video-to-video container returned 500")
+	}
+
+	return resp.JSON200, nil
+}
+
 func (w *Worker) Warm(ctx context.Context, pipeline string, modelID string, endpoint RunnerEndpoint) error {
 	if endpoint.URL == "" {
 		return w.manager.Warm(ctx, pipeline, modelID)

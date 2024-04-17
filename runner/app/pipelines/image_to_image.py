@@ -3,14 +3,17 @@ from app.pipelines.util import get_torch_device, get_model_dir
 
 from diffusers import (
     AutoPipelineForImage2Image,
+    StableDiffusionInstructPix2PixPipeline,
     StableDiffusionXLPipeline,
     UNet2DConditionModel,
     EulerDiscreteScheduler,
+    UNet2DConditionModel, LCMScheduler, StableDiffusionXLImg2ImgPipeline, DPMSolverMultistepScheduler
 )
 from safetensors.torch import load_file
 from huggingface_hub import file_download, hf_hub_download
 import torch
 import PIL
+import random
 from typing import List
 import logging
 import os
@@ -21,8 +24,9 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 logger = logging.getLogger(__name__)
 
+SDXL_BASE_MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
 SDXL_LIGHTNING_MODEL_ID = "ByteDance/SDXL-Lightning"
-
+PIX2PIX_MODEL_ID = "timbrooks/instruct-pix2pix"
 
 class ImageToImagePipeline(Pipeline):
     def __init__(self, model_id: str):
@@ -48,9 +52,17 @@ class ImageToImagePipeline(Pipeline):
             kwargs["variant"] = "fp16"
 
         self.model_id = model_id
+        self.speedup_module = ""
+        self.animate_module = ""
 
-        # Special case SDXL-Lightning because the unet for SDXL needs to be swapped
-        if SDXL_LIGHTNING_MODEL_ID in model_id:
+        if SDXL_BASE_MODEL_ID in self.model_id:
+            kwargs["torch_dtype"] = torch.float16
+            kwargs["variant"] = "fp16"
+            kwargs["use_safetensors"] = True
+            self.ldm = StableDiffusionXLImg2ImgPipeline.from_pretrained(model_id, **kwargs).to("cuda")
+            self.ldm.scheduler = DPMSolverMultistepScheduler.from_config(self.ldm.scheduler.config, use_karras_sigmas=True, algorithm_type="dpmsolver++")
+        elif SDXL_LIGHTNING_MODEL_ID in model_id:
+            # Special case SDXL-Lightning because the unet for SDXL needs to be swapped
             base = "stabilityai/stable-diffusion-xl-base-1.0"
 
             # ByteDance/SDXL-Lightning-2step
@@ -64,7 +76,7 @@ class ImageToImagePipeline(Pipeline):
                 unet_id = "sdxl_lightning_8step_unet"
             else:
                 # Default to 2step
-                unet_id = "sdxl_lightning_2step_unet"
+                unet_id = "sdxl_lightning_8step_unet"
 
             unet = UNet2DConditionModel.from_config(
                 base, subfolder="unet", cache_dir=kwargs["cache_dir"]
@@ -87,10 +99,18 @@ class ImageToImagePipeline(Pipeline):
             self.ldm.scheduler = EulerDiscreteScheduler.from_config(
                 self.ldm.scheduler.config, timestep_spacing="trailing"
             )
+        elif PIX2PIX_MODEL_ID in model_id:
+            kwargs["torch_dtype"] = torch.float16
+            kwargs["variant"] = "fp16"
+            self.ldm = StableDiffusionInstructPix2PixPipeline.from_pretrained(
+                model_id, **kwargs
+            ).to(torch_device)
         else:
             self.ldm = AutoPipelineForImage2Image.from_pretrained(
                 model_id, **kwargs
             ).to(torch_device)
+            self.ldm.scheduler = DPMSolverMultistepScheduler.from_config(self.ldm.scheduler.config, use_karras_sigmas=True, algorithm_type="dpmsolver++")
+
 
         if os.getenv("SFAST", "").strip().lower() == "true":
             logger.info(
@@ -138,6 +158,37 @@ class ImageToImagePipeline(Pipeline):
 
             if "num_inference_steps" not in kwargs:
                 kwargs["num_inference_steps"] = 2
+        elif SDXL_BASE_MODEL_ID in self.model_id:
+            # (un)load speedup module
+            if kwargs["speedup_module"] == "LCM" and self.speedup_module != "LCM":
+                self.speedup_module = "LCM"
+                # Unload LCM LoRa weights
+                self.ldm.unload_lora_weights()
+                # Switch to LCM scheduler
+                self.ldm.scheduler = LCMScheduler.from_config(self.ldm.scheduler.config)
+                self.ldm.load_lora_weights("latent-consistency/lcm-lora-sdxl")
+                self.ldm.fuse_lora()
+            elif kwargs["speedup_module"] == "Lightning" and self.speedup_module != "Lightning":
+                self.speedup_module = "Lightning"
+                # Unload LCM LoRa weights
+                self.ldm.unload_lora_weights()
+                # Switch to Euler scheduler
+                self.ldm.scheduler = EulerDiscreteScheduler.from_config(self.ldm.scheduler.config, timestep_spacing="trailing")
+                self.ldm.load_lora_weights(hf_hub_download("ByteDance/SDXL-Lightning", "sdxl_lightning_8step_lora.safetensors"))
+                self.ldm.fuse_lora()
+            elif kwargs["speedup_module"] == "" and self.speedup_module != "":
+                self.speedup_module = ""
+                # Unload LCM LoRa weights
+                self.ldm.unload_lora_weights()
+                # Switch scheduler back to default scheduler
+                self.ldm.scheduler = DPMSolverMultistepScheduler.from_config(self.ldm.scheduler.config, use_karras_sigmas=True, algorithm_type="dpmsolver++")
+            # Set appropriate inference step for speedup module used
+            if self.speedup_module == "LCM":
+                kwargs["num_inference_steps"] = 8
+            elif self.speedup_module == "Lightning":
+                kwargs["num_inference_steps"] = 8
+            elif self.speedup_module == "":
+                kwargs["num_inference_steps"] = 25
         elif SDXL_LIGHTNING_MODEL_ID in self.model_id:
             # SDXL-Lightning models should have guidance_scale = 0 and use
             # the correct number of inference steps for the unet checkpoint loaded
@@ -151,7 +202,20 @@ class ImageToImagePipeline(Pipeline):
                 kwargs["num_inference_steps"] = 8
             else:
                 # Default to 2step
-                kwargs["num_inference_steps"] = 2
+                kwargs["num_inference_steps"] = 8
+        elif PIX2PIX_MODEL_ID in self.model_id:
+            if "guidance_scale" not in kwargs:
+                kwargs["guidance_scale"] = round(random.uniform(6.0, 9.0), ndigits=2)
+            if "image_guidance_scale" not in kwargs:
+                kwargs["image_guidance_scale"] = round(random.uniform(1.2, 1.8), ndigits=2)
+            kwargs["num_inference_steps"] = 50
+        else:
+            kwargs["num_inference_steps"] = 25
+
+        if "speedup_module" in kwargs:
+            del kwargs["speedup_module"]
+        if "animate_module" in kwargs:
+            del kwargs["animate_module"]
 
         return self.ldm(prompt, image=image, **kwargs).images
 

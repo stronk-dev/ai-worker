@@ -18,14 +18,17 @@ class TextToVideoParams(BaseModel):
     # TODO: Make model_id optional once Go codegen tool supports OAPI 3.1
     # https://github.com/deepmap/oapi-codegen/issues/373
     model_id: str = ""
+    base_model_id: str = ""
     prompt: str
-    height: int = 576
-    width: int = 1024
+    height: int = None
+    width: int = None
     fps: int = 6
     guidance_scale: float = 7.5
     negative_prompt: str = ""
     motion: str = ""
     seed: int = None
+    speedup_module: str = ""
+    animate_module: str = ""
 
 responses = {400: {"model": HTTPError}, 500: {"model": HTTPError}}
 
@@ -75,6 +78,7 @@ async def text_to_video(
     try:
         batch_frames = pipeline(
             prompt=params.prompt,
+            base_model_id=params.base_model_id,
             negative_prompt=params.negative_prompt,
             motion=params.motion,
             guidance_scale=params.guidance_scale,
@@ -82,6 +86,8 @@ async def text_to_video(
             width=params.width,
             fps=params.fps,
             seed=params.seed,
+            speedup_module=params.speedup_module,
+            animate_module=params.animate_module,
         )
     except Exception as e:
         logger.error(f"TextToVideoPipeline error: {e}")

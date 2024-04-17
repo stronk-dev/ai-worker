@@ -18,6 +18,7 @@ class TextToImageParams(BaseModel):
     # TODO: Make model_id optional once Go codegen tool supports OAPI 3.1
     # https://github.com/deepmap/oapi-codegen/issues/373
     model_id: str = ""
+    base_model_id: str = ""
     prompt: str
     height: int = None
     width: int = None
@@ -25,6 +26,8 @@ class TextToImageParams(BaseModel):
     negative_prompt: str = ""
     seed: int = None
     num_images_per_prompt: int = 1
+    speedup_module: str = ""
+    animate_module: str = ""
 
 
 responses = {400: {"model": HTTPError}, 500: {"model": HTTPError}}

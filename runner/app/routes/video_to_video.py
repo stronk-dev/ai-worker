@@ -6,6 +6,8 @@ from app.dependencies import get_pipeline
 from app.routes.util import image_to_data_url, VideoResponse, HTTPError, http_error
 from PIL import Image
 from typing import Annotated
+import imageio
+from io import BytesIO
 import logging
 import random
 import os
@@ -20,24 +22,23 @@ logger = logging.getLogger(__name__)
 
 responses = {400: {"model": HTTPError}, 500: {"model": HTTPError}}
 
-
 # TODO: Make model_id optional once Go codegen tool supports OAPI 3.1
 # https://github.com/deepmap/oapi-codegen/issues/373
-@router.post("/image-to-video", response_model=VideoResponse, responses=responses)
+@router.post("/video-to-video", response_model=VideoResponse, responses=responses)
 @router.post(
-    "/image-to-video/",
+    "/video-to-video/",
     response_model=VideoResponse,
     responses=responses,
     include_in_schema=False,
 )
-async def image_to_video(
-    image: Annotated[UploadFile, File()],
+async def video_to_video(
+    video: Annotated[UploadFile, File()],
     prompt: Annotated[str, Form()] = "",
     negative_prompt: Annotated[str, Form()] = "",
     model_id: Annotated[str, Form()] = "",
     base_model_id: Annotated[str, Form()] = "",
-    height: Annotated[int, Form()] = None,
-    width: Annotated[int, Form()] = None,
+    height: Annotated[int, Form()] = 576,
+    width: Annotated[int, Form()] = 1024,
     fps: Annotated[int, Form()] = 6,
     motion_bucket_id: Annotated[int, Form()] = 127,
     noise_aug_strength: Annotated[float, Form()] = 0.02,
@@ -65,13 +66,34 @@ async def image_to_video(
             ),
         )
 
+    if height % 8 != 0 or width % 8 != 0:
+        return JSONResponse(
+            status_code=400,
+            content=http_error(
+                f"`height` and `width` have to be divisible by 8 but are {height} and "
+                f"{width}."
+            ),
+        )
+
     if seed is None:
         seed = random.randint(0, 2**32 - 1)
 
+    images = []
+    content = BytesIO(video.file)
+    vid = imageio.get_reader(content)
+    for frame in vid:
+        pil_image = Image.fromarray(frame)
+        images.append(pil_image)
+    if len(images < 1):
+        logger.error(f"VideoToVideoPipeline error: unable to decode video file")
+        logger.exception(e)
+        return JSONResponse(
+            status_code=500, content=http_error("VideoToVideoPipeline error")
+        )
+
     try:
-        # TODO: hotswap base_model_id
         batch_frames = pipeline(
-            image=Image.open(image.file).convert("RGB"),
+            video=images,
             height=height,
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -80,14 +102,15 @@ async def image_to_video(
             motion_bucket_id=motion_bucket_id,
             noise_aug_strength=noise_aug_strength,
             seed=seed,
+            base_model_id=base_model_id,
             speedup_module=speedup_module,
             animate_module=animate_module,
         )
     except Exception as e:
-        logger.error(f"ImageToVideoPipeline error: {e}")
+        logger.error(f"VideoToVideoPipeline error: {e}")
         logger.exception(e)
         return JSONResponse(
-            status_code=500, content=http_error("ImageToVideoPipeline error")
+            status_code=500, content=http_error("VideoToVideoPipeline error")
         )
 
     output_frames = []

@@ -34,13 +34,17 @@ async def image_to_image(
     prompt: Annotated[str, Form()],
     image: Annotated[UploadFile, File()],
     model_id: Annotated[str, Form()] = "",
+    base_model_id: Annotated[str, Form()] = "",
     strength: Annotated[float, Form()] = 0.8,
     guidance_scale: Annotated[float, Form()] = 7.5,
+    image_guidance_scale: Annotated[float, Form()] = 0,
     negative_prompt: Annotated[str, Form()] = "",
     seed: Annotated[int, Form()] = None,
     num_images_per_prompt: Annotated[int, Form()] = 1,
     pipeline: Pipeline = Depends(get_pipeline),
     token: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
+    speedup_module: Annotated[str, Form()] = "",
+    animate_module: Annotated[str, Form()] = "",
 ):
     auth_token = os.environ.get("AUTH_TOKEN")
     if auth_token:
@@ -76,14 +80,18 @@ async def image_to_image(
         image = img
 
     try:
+        # TODO: hotswap base_model_id
         images = pipeline(
             prompt=prompt,
             image=image,
             strength=strength,
             guidance_scale=guidance_scale,
+            image_guidance_scale=image_guidance_scale,
             negative_prompt=negative_prompt,
             seed=seed,
             num_images_per_prompt=num_images_per_prompt,
+            speedup_module=speedup_module,
+            animate_module=animate_module,
         )
     except Exception as e:
         logger.error(f"ImageToImagePipeline error: {e}")

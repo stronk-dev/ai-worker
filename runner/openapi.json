@@ -275,6 +275,69 @@
           }
         ]
       }
+    },
+    "/video-to-video": {
+      "post": {
+        "summary": "Video To Video",
+        "operationId": "video_to_video",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_video_to_video_video_to_video_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -308,12 +371,22 @@
             "title": "Model Id",
             "default": ""
           },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
+            "default": ""
+          },
           "strength": {
             "type": "number",
             "title": "Strength",
             "default": 0.8
           },
           "guidance_scale": {
+            "type": "number",
+            "title": "Guidance Scale",
+            "default": 7.5
+          },
+          "image_guidance_scale": {
             "type": "number",
             "title": "Guidance Scale",
             "default": 7.5
@@ -331,6 +404,16 @@
             "type": "integer",
             "title": "Num Images Per Prompt",
             "default": 1
+          },
+          "speedup_module": {
+            "type": "string",
+            "title": "Speedup Module",
+            "default": ""
+          },
+          "animate_module": {
+            "type": "string",
+            "title": "Animate Module",
+            "default": ""
           }
         },
         "type": "object",
@@ -352,15 +435,23 @@
             "title": "Model Id",
             "default": ""
           },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
+            "default": ""
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "default": ""
+          },
           "height": {
             "type": "integer",
-            "title": "Height",
-            "default": 576
+            "title": "Height"
           },
           "width": {
             "type": "integer",
-            "title": "Width",
-            "default": 1024
+            "title": "Width"
           },
           "fps": {
             "type": "integer",
@@ -377,9 +468,24 @@
             "title": "Noise Aug Strength",
             "default": 0.02
           },
+          "negative_prompt": {
+            "type": "string",
+            "title": "Negative Prompt",
+            "default": ""
+          },
           "seed": {
             "type": "integer",
             "title": "Seed"
+          },
+          "speedup_module": {
+            "type": "string",
+            "title": "Speedup Module",
+            "default": ""
+          },
+          "animate_module": {
+            "type": "string",
+            "title": "Animate Module",
+            "default": ""
           }
         },
         "type": "object",
@@ -387,6 +493,77 @@
           "image"
         ],
         "title": "Body_image_to_video_image_to_video_post"
+      },
+      "Body_video_to_video_video_to_video_post": {
+        "properties": {
+          "video": {
+            "type": "string",
+            "format": "binary",
+            "title": "Video"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "default": ""
+          },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
+            "default": ""
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "default": ""
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "fps": {
+            "type": "integer",
+            "title": "Fps",
+            "default": 7
+          },
+          "negative_prompt": {
+            "type": "string",
+            "title": "Negative Prompt",
+            "default": ""
+          },
+          "motion_bucket_id": {
+            "type": "integer",
+            "title": "Motion Bucket Id",
+            "default": 127
+          },
+          "noise_aug_strength": {
+            "type": "number",
+            "title": "Noise Aug Strength",
+            "default": 0.02
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          },
+          "speedup_module": {
+            "type": "string",
+            "title": "Speedup Module",
+            "default": ""
+          },
+          "animate_module": {
+            "type": "string",
+            "title": "Animate Module",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "video"
+        ],
+        "title": "Body_video_to_video_video_to_video_post"
       },
       "HTTPError": {
         "properties": {
@@ -465,6 +642,11 @@
             "title": "Model Id",
             "default": ""
           },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
+            "default": ""
+          },
           "prompt": {
             "type": "string",
             "title": "Prompt"
@@ -495,6 +677,16 @@
             "type": "integer",
             "title": "Num Images Per Prompt",
             "default": 1
+          },
+          "speedup_module": {
+            "type": "string",
+            "title": "Speedup Module",
+            "default": ""
+          },
+          "animate_module": {
+            "type": "string",
+            "title": "Animate Module",
+            "default": ""
           }
         },
         "type": "object",
@@ -508,6 +700,11 @@
           "model_id": {
             "type": "string",
             "title": "Model Id",
+            "default": ""
+          },
+          "base_model_id": {
+            "type": "string",
+            "title": "Base Model Id",
             "default": ""
           },
           "prompt": {
@@ -545,6 +742,16 @@
             "type": "integer",
             "title": "Fps",
             "default": 7
+          },
+          "speedup_module": {
+            "type": "string",
+            "title": "Speedup Module",
+            "default": ""
+          },
+          "animate_module": {
+            "type": "string",
+            "title": "Animate Module",
+            "default": ""
           }
         },
         "type": "object",
